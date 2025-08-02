@@ -74,7 +74,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         active_connections.pop(session_id, None)
 
 
-@router.post("/start-new-session-1")
+@router.get("/start-new-session-1")
 async def start_new():
     result = start_new_interview()
     return {
