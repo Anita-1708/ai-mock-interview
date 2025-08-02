@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from dataclasses import dataclass
 from typing import TypedDict
-
+# from question_service import Question
 from enums import Phase
 
 
@@ -25,6 +25,7 @@ class SessionData(TypedDict,total=False):
     summary: Optional[str]
     phase : Phase
     metadata: Optional[Dict[str, Any]]
+    question: Optional[Dict[str, Any]]
 
 
 @dataclass

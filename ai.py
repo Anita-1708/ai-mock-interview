@@ -1,11 +1,12 @@
 import logging
 from typing import TypedDict
-
+import json
 from dotenv import load_dotenv
 from langchain.chains import LLMChain
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 from langgraph.graph import StateGraph
+from question_service import QuestionService
 
 from data_class import MessageRequest
 from enums import Phase
@@ -139,6 +140,7 @@ reply with enum only strictly. [COMPLETE, NOT_COMPLETE]
         ])
     )
     logger.warning(f"{request_id} - Processing intent_analysis_node step")
+
     state["output"] = chain.run(input=state['input'])
 
     logger.warning(f"{request_id} - Processing intent_analysis_node step")
@@ -473,72 +475,72 @@ def getPhaseDescription(phase: Phase) -> str:
     return descriptions.get(phase, "Unknown phase")
 
 
-class InterviewSession:
-    """
-    Class to manage interview session state and flow
-    """
-    
-    def __init__(self, session_id: str = None):
-        self.session_id = session_id or f"session_{hash(str(id(self)))}"
-        self.current_phase = Phase.START
-        self.phase_history = []
-        self.user_responses = []
-        self.interviewer_responses = []
-        self.session_started = False
-        
-    def start_interview(self, user_input: str) -> str:
-        """
-        Start the interview session
-        """
-        self.session_started = True
-        self.current_phase = Phase.INTRO_PHASE
-        return self.process_phase(user_input)
-    
-    def process_phase(self, user_input: str) -> str:
-        """
-        Process the current phase with user input
-        """
-        self.user_responses.append(user_input)
-        self.phase_history.append(self.current_phase)
-        
-        # Process the current phase
-        response = processInterviewPhase(user_input, self.current_phase, self.session_id)
-        self.interviewer_responses.append(response)
-        
-        return response
-    
-    def next_phase(self, user_input: str = "") -> str:
-        """
-        Move to the next phase
-        """
-        self.current_phase = getNextPhase(self.current_phase)
-        return self.process_phase(user_input)
-    
-    def go_to_phase(self, target_phase: Phase, user_input: str = "") -> str:
-        """
-        Jump to a specific phase
-        """
-        self.current_phase = target_phase
-        return self.process_phase(user_input)
-    
-    def get_session_summary(self) -> dict:
-        """
-        Get summary of the interview session
-        """
-        return {
-            "session_id": self.session_id,
-            "current_phase": self.current_phase,
-            "phase_description": getPhaseDescription(self.current_phase),
-            "total_phases_completed": len(self.phase_history),
-            "session_started": self.session_started,
-            "phase_history": [getPhaseDescription(phase) for phase in self.phase_history]
-        }
-    
-    def is_completed(self) -> bool:
-        """
-        Check if interview is completed
-        """
-        return self.current_phase == Phase.EVALUATION_PHASE and len(self.phase_history) > 0
+# class InterviewSession:
+#     """
+#     Class to manage interview session state and flow
+#     """
+#
+#     def __init__(self, session_id: str = None):
+#         self.session_id = session_id or f"session_{hash(str(id(self)))}"
+#         self.current_phase = Phase.START
+#         self.phase_history = []
+#         self.user_responses = []
+#         self.interviewer_responses = []
+#         self.session_started = False
+#
+#     # def start_interview(self, user_input: str) -> str:
+#     #     """
+#     #     Start the interview session
+#     #     """
+#     #     self.session_started = True
+#     #     self.current_phase = Phase.INTRO_PHASE
+#     #     return self.process_phase(user_input)
+#
+#     def process_phase(self, user_input: str) -> str:
+#         """
+#         Process the current phase with user input
+#         """
+#         self.user_responses.append(user_input)
+#         self.phase_history.append(self.current_phase)
+#
+#         # Process the current phase
+#         response = processInterviewPhase(user_input, self.current_phase, self.session_id)
+#         self.interviewer_responses.append(response)
+#
+#         return response
+#
+#     # def next_phase(self, user_input: str = "") -> str:
+#     #     """
+#     #     Move to the next phase
+#     #     """
+#     #     self.current_phase = getNextPhase(self.current_phase)
+#     #     return self.process_phase(user_input)
+#     #
+#     # def go_to_phase(self, target_phase: Phase, user_input: str = "") -> str:
+#     #     """
+#     #     Jump to a specific phase
+#     #     """
+#     #     self.current_phase = target_phase
+#     #     return self.process_phase(user_input)
+#     #
+#     # def get_session_summary(self) -> dict:
+#     #     """
+#     #     Get summary of the interview session
+#     #     """
+#     #     return {
+#     #         "session_id": self.session_id,
+#     #         "current_phase": self.current_phase,
+#     #         "phase_description": getPhaseDescription(self.current_phase),
+#     #         "total_phases_completed": len(self.phase_history),
+#     #         "session_started": self.session_started,
+#     #         "phase_history": [getPhaseDescription(phase) for phase in self.phase_history]
+#     #     }
+#     #
+#     # def is_completed(self) -> bool:
+#     #     """
+#     #     Check if interview is completed
+#     #     """
+#     #     return self.current_phase == Phase.EVALUATION_PHASE and len(self.phase_history) > 0
 
 
 # Example usage functions
@@ -556,11 +558,11 @@ def run_interview_phase(user_input: str, phase: Phase) -> str:
     return processInterviewPhase(user_input, phase)
 
 
-def create_interview_session() -> InterviewSession:
-    """
-    Create a new interview session
-    """
-    return InterviewSession()
+# def create_interview_session() -> InterviewSession:
+#     """
+#     Create a new interview session
+#     """
+#     return InterviewSession()
 
 
 # Example usage:
@@ -596,12 +598,16 @@ def question_phase_node(state: ProcessingState) -> ProcessingState:
     Node for interview question phase
     """
     request_id = state["request_id"]
+    session = get_session(session_id=request_id)
+    service = QuestionService(openai_api_key="your_api_key")
+    question =  service.generate_question()
+    session['question'] = question
     logger.warning(f"{request_id} - Processing question phase")
     
     llm = ChatOpenAI(model_name="gpt-4.1-nano", temperature=0.8, max_tokens=2000)
 
 
-    prompt = """You are a technical interviewer bot conducting coding interviews in a conversational and interactive manner. Your goal is to assess the candidate's problem-solving ability by guiding them through algorithmic challenges.
+    prompt = f"""You are a technical interviewer bot conducting coding interviews in a conversational and interactive manner. Your goal is to assess the candidate's problem-solving ability by guiding them through algorithmic challenges.
 
 You do not simply read out the question. Instead, you explain the problem context clearly and naturally, helping the candidate understand the scenario before they begin solving it.
 
@@ -616,8 +622,7 @@ Begin by saying something like:
 
 Then, explain the problem using the provided description—engagingly and clearly—not just reading it out word-for-word.
 
-question : [You are given an even-length array nums of integers and a positive integer limit. Consider each pair formed by elements at positions i and 2n - 1 - i, where n = len(nums) // 2. Your goal is to make the sum of every such pair equal to the same target value. To achieve this, you are allowed to perform at most one operation on each pair: replace both elements with any integers between 1 and limit (inclusive). Return the minimum number of operations needed to make all pairs sum to the same value. For example, given nums = [1, 2, 4, 3] and limit = 4, the pairs are (1, 3) and (2, 4), which sum to 4 and 6 respectively. Changing (2, 4) to (2, 2) makes both pairs sum to 4 using just one operation. Your task is to determine the optimal target sum and count the minimal operations needed across all pairs. The input constraints are: 2 <= len(nums) <= 10^5, len(nums) is even, and 1 <= nums[i], limit <= 10^5.]
-
+question : [{question}]
 
 Your role is not to solve the problem but to guide, clarify, and evaluate.
 
