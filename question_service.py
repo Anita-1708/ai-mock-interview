@@ -31,11 +31,11 @@ class QuestionService:
             api_key=openai_api_key
         )
 
-    def generate_question(self) -> Optional[Question]:
+    async def generate_question(self, session_id: str) -> Optional[Question]:
         print("generate_question")
 
         try:
-            result =  self.llm.ainvoke([
+            result = await self.llm.ainvoke([
                 SystemMessage(content=QUESTION_GENERATION_PROMPT),
                 HumanMessage(content="Generate question according to the prompt")
             ])
@@ -45,6 +45,9 @@ class QuestionService:
             try:
                 data = json.loads(result.content)
                 question = Question(**data)
+                session = get_session(session_id)
+                session["question"] = question.dict()
+                print("Question stored in session:", session)
                 return question
 
             except Exception as parse_error:

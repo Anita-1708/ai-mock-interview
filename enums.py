@@ -7,4 +7,4 @@ class Phase(Enum):
     QUESTION_PHASE = 3
     APPROACH_PHASE = 4
     CODING_PHASE = 5
-    EVALUATION_PHASE = 6 
+    EVALUATION_PHASE = 6

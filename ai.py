@@ -599,9 +599,9 @@ def question_phase_node(state: ProcessingState) -> ProcessingState:
     """
     request_id = state["request_id"]
     session = get_session(session_id=request_id)
-    service = QuestionService(openai_api_key="your_api_key")
-    question =  service.generate_question()
-    session['question'] = question
+    # service = QuestionService(openai_api_key="your_api_key")
+    # question = service.generate_question(request_id)
+    question = session['question']
     logger.warning(f"{request_id} - Processing question phase")
     
     llm = ChatOpenAI(model_name="gpt-4.1-nano", temperature=0.8, max_tokens=2000)
