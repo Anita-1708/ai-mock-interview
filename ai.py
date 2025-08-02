@@ -260,8 +260,98 @@ Do not add any extra explanation or reasoning. Just respond with `COMPLETE` or `
     return state
 
 
+def coding_intent_analysis(state : ProcessingState) -> ProcessingState:
+    request_id = state["request_id"]
+    logger.warning(f"{request_id} - Processing ask_follow_up_node step")
+    llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=1, max_tokens=2048)
+    session = get_session(session_id=request_id)
+
+    messages = flatten_message_history_based_on_phase(session['message_history'],session['phase'])
 
 
+
+    prompt = f"""You are observing a live technical coding interview. The conversation has included a sequence of interactions between the candidate and the interviewer.
+The candidate has just unmuted their microphone and spoken aloud. Your task is to determine whether the candidate is asking for a hint related to the coding problem they are solving.
+Use the full context of the interaction, including the message history below and the candidate’s latest spoken utterance, to make your decision.
+
+Assistant is basically what agent has said and user is what user has said till now
+Message History:
+[{messages}]
+
+
+Instructions:
+Analyze the spoken input in the context of the full conversation. Focus on:
+Expressions of confusion, hesitation, or uncertainty.
+Indirect or direct requests for help or guidance.
+Phrases like: “Am I on the right track?”, “What should I do next?”, “Is this okay?”, “I'm stuck,” etc.
+Requests for confirmation or validation of approach.
+Respond with:
+"COMPLETE" — if the candidate is likely asking for a hint.
+"NOT_COMPLETE" — if the candidate is not asking for a hint."""
+
+    chain = LLMChain(
+        llm=llm,
+        prompt=ChatPromptTemplate.from_messages([
+            SystemMessagePromptTemplate.from_template(prompt),
+            HumanMessagePromptTemplate.from_template("{input}")
+        ])
+    )
+    logger.warning(f"{request_id} - Processing coding_intent_analysis step")
+    state["output"] = chain.run(input=state['input'])
+
+
+
+
+def provide_hint(state : ProcessingState) -> ProcessingState:
+    request_id = state["request_id"]
+    logger.warning(f"{request_id} - Processing provide_hint step")
+    llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=1, max_tokens=2048)
+    session = get_session(session_id=request_id)
+
+
+    # messages = flatten_message_history_based_on_phase(session['message_history'],session['phase'])
+
+    question = ""
+    code = ""
+
+
+    prompt = f"""You are observing a live technical coding interview. The conversation has included a sequence of interactions between the candidate and the interviewer.
+The candidate has just unmuted their microphone and spoken aloud. Your task is to determine whether the candidate is asking for a hint related to the coding problem they are solving.
+Use the full context of the interaction, including the message history below and the candidate’s latest spoken utterance, to make your decision.
+Message History:
+ 
+[ {question} ]
+Latest code from user:
+[ {code}]
+
+Instructions:
+Carefully read the candidate’s answer to understand what they’ve tried so far, what they understand, and where they might be stuck or going wrong.
+Based on the question and their current approach:
+Identify the next logical step, missing insight, or common misconception.
+Craft a single conversational hint that:
+Sounds like natural interviewer guidance.
+Encourages the candidate to think or reconsider an idea.
+Avoids revealing the full answer.
+Avoid asking any question. Just give hint
+Keep your tone supportive, patient, and light."""
+
+    add_message(request_id,"user",state["input"] ,state["phase"])
+
+
+    chain = LLMChain(
+        llm=llm,
+        prompt=ChatPromptTemplate.from_messages([
+            SystemMessagePromptTemplate.from_template(prompt),
+            HumanMessagePromptTemplate.from_template("{input}")
+        ])
+    )
+
+
+    logger.warning(f"{request_id} - Processing provide_hint step")
+    state["output"] = chain.run(input=state['input'])
+    add_message(request_id,"assistant",state["output"] ,state["phase"])
+
+    return state
 
 
 def route_to_phase(state : ProcessingState) -> str:
@@ -300,8 +390,20 @@ def processRequest(user_input: str,session_id : str) -> str:
     workflow.add_node("ask_follow_up",ask_follow_up_node)
     workflow.add_node("step_to_phase",step_to_phase)
     workflow.add_node("approach_intent_analysis",approach_intent_analysis)
+    workflow.add_node("coding_intent_analysis",coding_intent_analysis)
+    workflow.add_node("provide_hint",provide_hint)
     
     workflow.set_entry_point("step_to_phase")
+
+    workflow.add_conditional_edges(
+        "coding_intent_analysis",
+        intent_analysis_classify,
+        {
+            "complete":"provide_hint", # hint maang rha h
+            # "not_complete":"ask_follow_up" # hint nhi maang rha
+        }
+
+    )
 
 
     workflow.add_conditional_edges(
@@ -310,7 +412,7 @@ def processRequest(user_input: str,session_id : str) -> str:
         {
             "intro_phase":"intro_intent_analysis",
             "approach_phase":"approach_intent_analysis",
-            # "coding_phase":"coding_phase",
+            "coding_phase":"coding_intent_analysis",
         }
     )
 
@@ -330,7 +432,7 @@ def processRequest(user_input: str,session_id : str) -> str:
         "approach_intent_analysis",
         intent_analysis_classify,
         {
-            "complete":"evaluation_phase",
+            "complete":"coding_phase",
             "not_complete":"ask_follow_up"
         }
 
@@ -689,23 +791,19 @@ def coding_phase_node(state: ProcessingState) -> ProcessingState:
     chain = LLMChain(
         llm=llm,
         prompt=ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template("""You are an AI interviewer in the coding phase. 
-You should:
-1. Present a coding challenge appropriate to their skill level
-2. Ask them to write code or pseudocode
-3. Discuss their implementation approach
-4. Ask about time and space complexity
-5. Provide hints if they get stuck
-6. Evaluate their coding style and problem-solving
-
-Present a coding problem that tests their technical skills and coding abilities."""),
+            SystemMessagePromptTemplate.from_template("""You are an intelligent and supportive interview assistant conducting a mock technical interview. You are currently in the Coding Phase, where the candidate is expected to implement their solution to a given problem.
+    Your role is to encourage the candidate to begin coding, and let them know they may ask for hints if needed. You should remain professional, calm, and responsive throughout.
+    Begin by prompting the candidate to start coding. If they appear stuck or ask for help, offer thoughtful hints without giving away the full solution unless explicitly requested in a conversational way"""),
             HumanMessagePromptTemplate.from_template("{input}")
         ])
     )
+    add_message(request_id,"user",state["input"],state["phase"])
     
-    state["output"] = chain.run(input=state["input"])
+    state["output"] = chain.run(input="")
     state["phase"] = Phase.CODING_PHASE
     state["step"] = 4
+    add_message(request_id,"assistant",state["output"] ,state["phase"])
+    update_phase(request_id, Phase.CODING_PHASE)
     return state
 
 
