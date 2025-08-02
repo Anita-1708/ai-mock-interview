@@ -13,6 +13,9 @@ from enums import Phase
 from memory.session import create_session, add_message, get_session, update_phase, flatten_message_history, \
     flatten_message_history_based_on_phase
 from sop_prompts import intent_analysis, intro_message_prompt
+from ai_prompts import intro_intent_analysis_node_prompt, ask_follow_up_node_prompt, \
+    approach_intent_analysis_node_prompt, coding_intent_analysis_node, provide_hint_node_prompt, \
+    question_phase_node_prompt, approach_phase_node_prompt, coding_phase_node_prompt, evaluation_phase_node_prompt
 
 load_dotenv()
 
@@ -135,7 +138,7 @@ reply with enum only strictly. [COMPLETE, NOT_COMPLETE]
     chain = LLMChain(
         llm=llm,
         prompt=ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(combined_input),
+            SystemMessagePromptTemplate.from_template(intro_intent_analysis_node_prompt.prompt.format(phase = state['phase'],messages=messages)),
             HumanMessagePromptTemplate.from_template("{input}")
         ])
     )
@@ -164,36 +167,12 @@ def ask_follow_up_node(state : ProcessingState) -> ProcessingState:
     llm = ChatOpenAI(model_name="gpt-4.1-nano", temperature=1, max_tokens=5000)
     session = get_session(session_id=request_id)
     messages = flatten_message_history_based_on_phase(session['message_history'],state['phase'])
-
-    prompt = f"""You are conducting an ongoing interview that progresses through six structured phases.
-
-Current Phase: {state['phase']}
-
-Here is the conversation history so far:
-
-[{messages} ]
-Based on this message history, ask the next follow-up question in a natural, conversational tone appropriate to the current phase of the interview on a call.
-
-Ensure your question:
-
-Feels human and engaging
-
-Builds smoothly on what the candidate has already shared
-
-Is appropriate for the {state['phase']} stage of the interview
-
-Do not repeat previously asked questions or summarize the history — simply continue the flow of the conversation naturally."""
-
-
-
-    print(prompt)
-
     print("====")
     print(state['input'])
     chain = LLMChain(
         llm=llm,
         prompt=ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(prompt),
+            SystemMessagePromptTemplate.from_template(ask_follow_up_node_prompt.prompt.format(phase = state['phase'],messages=messages)),
             # HumanMessagePromptTemplate.from_template("{input}")
         ])
     )
@@ -218,35 +197,10 @@ def approach_intent_analysis(state : ProcessingState) -> ProcessingState:
 
     messages = flatten_message_history_based_on_phase(session['message_history'],session['phase'])
 
-
-    prompt = f"""You are a DSA interview assistant conducting the APPROACH PHASE of a coding interview.
-
-The student is attempting to explain their approach for the following question:
-
-Question: [You are given an even-length array nums of integers and a positive integer limit. Consider each pair formed by elements at positions i and 2n - 1 - i, where n = len(nums) // 2. Your goal is to make the sum of every such pair equal to the same target value. To achieve this, you are allowed to perform at most one operation on each pair: replace both elements with any integers between 1 and limit (inclusive). Return the minimum number of operations needed to make all pairs sum to the same value. For example, given nums = [1, 2, 4, 3] and limit = 4, the pairs are (1, 3) and (2, 4), which sum to 4 and 6 respectively. Changing (2, 4) to (2, 2) makes both pairs sum to 4 using just one operation. Your task is to determine the optimal target sum and count the minimal operations needed across all pairs. The input constraints are: 2 <= len(nums) <= 10^5, len(nums) is even, and 1 <= nums[i], limit <= 10^5.]
-
-
-Below is the message history between the student and the assistant so far:
-[{messages}]
-
-In this phase, your job is to evaluate the **most recent answer provided by the student**, which comes next as a human message.
-
-Evaluation Criteria:
-- The approach must be relevant to the given question.
-- It should clearly outline the steps or strategy the student intends to take to solve the problem.
-- It should demonstrate logical clarity, feasibility, and awareness of key edge cases.
-- If this is a follow-up attempt (i.e., previous answers were incomplete), the new response should fix earlier gaps or add meaningful improvements.
-
-You MUST respond with one of the following **strict values only**:
-- `COMPLETE` → if the student's latest approach is clearly explained and acceptable.
-- `NOT_COMPLETE` → if the latest explanation is incorrect, vague, or incomplete.
-
-Do not add any extra explanation or reasoning. Just respond with `COMPLETE` or `NOT_COMPLETE`."""
-
     chain = LLMChain(
         llm=llm,
         prompt=ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(prompt),
+            SystemMessagePromptTemplate.from_template(approach_intent_analysis_node_prompt.prompt.format(messages=messages)),
             HumanMessagePromptTemplate.from_template("{input}")
         ])
     )
@@ -268,31 +222,10 @@ def coding_intent_analysis(state : ProcessingState) -> ProcessingState:
 
     messages = flatten_message_history_based_on_phase(session['message_history'],session['phase'])
 
-
-
-    prompt = f"""You are observing a live technical coding interview. The conversation has included a sequence of interactions between the candidate and the interviewer.
-The candidate has just unmuted their microphone and spoken aloud. Your task is to determine whether the candidate is asking for a hint related to the coding problem they are solving.
-Use the full context of the interaction, including the message history below and the candidate’s latest spoken utterance, to make your decision.
-
-Assistant is basically what agent has said and user is what user has said till now
-Message History:
-[{messages}]
-
-
-Instructions:
-Analyze the spoken input in the context of the full conversation. Focus on:
-Expressions of confusion, hesitation, or uncertainty.
-Indirect or direct requests for help or guidance.
-Phrases like: “Am I on the right track?”, “What should I do next?”, “Is this okay?”, “I'm stuck,” etc.
-Requests for confirmation or validation of approach.
-Respond with:
-"COMPLETE" — if the candidate is likely asking for a hint.
-"NOT_COMPLETE" — if the candidate is not asking for a hint."""
-
     chain = LLMChain(
         llm=llm,
         prompt=ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(prompt),
+            SystemMessagePromptTemplate.from_template(coding_intent_analysis_node.prompt.format(messages=messages)),
             HumanMessagePromptTemplate.from_template("{input}")
         ])
     )
@@ -315,33 +248,13 @@ def provide_hint(state : ProcessingState) -> ProcessingState:
     code = ""
 
 
-    prompt = f"""You are observing a live technical coding interview. The conversation has included a sequence of interactions between the candidate and the interviewer.
-The candidate has just unmuted their microphone and spoken aloud. Your task is to determine whether the candidate is asking for a hint related to the coding problem they are solving.
-Use the full context of the interaction, including the message history below and the candidate’s latest spoken utterance, to make your decision.
-Message History:
- 
-[ {question} ]
-Latest code from user:
-[ {code}]
-
-Instructions:
-Carefully read the candidate’s answer to understand what they’ve tried so far, what they understand, and where they might be stuck or going wrong.
-Based on the question and their current approach:
-Identify the next logical step, missing insight, or common misconception.
-Craft a single conversational hint that:
-Sounds like natural interviewer guidance.
-Encourages the candidate to think or reconsider an idea.
-Avoids revealing the full answer.
-Avoid asking any question. Just give hint
-Keep your tone supportive, patient, and light."""
-
     add_message(request_id,"user",state["input"] ,state["phase"])
 
 
     chain = LLMChain(
         llm=llm,
         prompt=ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(prompt),
+            SystemMessagePromptTemplate.from_template(provide_hint_node_prompt.prompt.format(question=question,code=code)),
             HumanMessagePromptTemplate.from_template("{input}")
         ])
     )
@@ -708,33 +621,10 @@ def question_phase_node(state: ProcessingState) -> ProcessingState:
     
     llm = ChatOpenAI(model_name="gpt-4.1-nano", temperature=0.8, max_tokens=2000)
 
-
-    prompt = f"""You are a technical interviewer bot conducting coding interviews in a conversational and interactive manner. Your goal is to assess the candidate's problem-solving ability by guiding them through algorithmic challenges.
-
-You do not simply read out the question. Instead, you explain the problem context clearly and naturally, helping the candidate understand the scenario before they begin solving it.
-
-When the interview starts, greet the candidate professionally and introduce the problem in a step-by-step way, using conversational phrasing. Encourage the candidate to think aloud and clarify if they have questions. Always maintain a professional and supportive tone.
-
-You will be provided with a coding problem description as input. Use this to frame your explanation and kick off the interview.
-
-Begin by saying something like:
-
-"Let’s begin the interview. I’ll walk you through the problem first, and then we’ll dive into your approach."
-
-
-Then, explain the problem using the provided description—engagingly and clearly—not just reading it out word-for-word.
-
-question : [{question}]
-
-Your role is not to solve the problem but to guide, clarify, and evaluate.
-
-"""
-
-
     chain = LLMChain(
         llm=llm,
         prompt=ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(prompt),
+            SystemMessagePromptTemplate.from_template(question_phase_node_prompt.prompt.format(question=question)),
             HumanMessagePromptTemplate.from_template("{input}")
         ])
     )
@@ -760,15 +650,7 @@ def approach_phase_node(state: ProcessingState) -> ProcessingState:
     chain = LLMChain(
         llm=llm,
         prompt=ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template("""You are an AI interviewer in the approach phase. 
-Based on the candidate's responses, you should:
-1. Present a technical problem or scenario
-2. Ask them to explain their approach to solving it
-3. Encourage them to think out loud
-4. Ask follow-up questions about their reasoning
-5. Assess their analytical thinking
-
-Present a challenging but fair technical problem and guide them through their approach."""),
+            SystemMessagePromptTemplate.from_template(approach_phase_node_prompt.prompt),
             HumanMessagePromptTemplate.from_template("{input}")
         ])
     )
@@ -791,9 +673,7 @@ def coding_phase_node(state: ProcessingState) -> ProcessingState:
     chain = LLMChain(
         llm=llm,
         prompt=ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template("""You are an intelligent and supportive interview assistant conducting a mock technical interview. You are currently in the Coding Phase, where the candidate is expected to implement their solution to a given problem.
-    Your role is to encourage the candidate to begin coding, and let them know they may ask for hints if needed. You should remain professional, calm, and responsive throughout.
-    Begin by prompting the candidate to start coding. If they appear stuck or ask for help, offer thoughtful hints without giving away the full solution unless explicitly requested in a conversational way"""),
+            SystemMessagePromptTemplate.from_template(coding_phase_node_prompt.prompt),
             HumanMessagePromptTemplate.from_template("{input}")
         ])
     )
@@ -819,16 +699,7 @@ def evaluation_phase_node(state: ProcessingState) -> ProcessingState:
     chain = LLMChain(
         llm=llm,
         prompt=ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template("""You are an AI interviewer in the evaluation phase. 
-You should:
-1. Thank the candidate for their time
-2. Provide constructive feedback on their performance
-3. Highlight their strengths
-4. Mention areas for improvement
-5. Ask if they have any questions
-6. End the interview professionally
-
-Provide a balanced evaluation of their interview performance."""),
+            SystemMessagePromptTemplate.from_template(evaluation_phase_node_prompt.prompt),
             HumanMessagePromptTemplate.from_template("{input}")
         ])
     )
